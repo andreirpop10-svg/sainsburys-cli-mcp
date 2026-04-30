@@ -26,7 +26,7 @@ It also learns your shopping habits from order history and maintains a local sho
 ## Quick Start — CLI
 
 ```bash
-git clone https://github.com/dangarfield/sainsburys-cli-mcp.git
+git clone https://github.com/andreirpop10-svg/sainsburys-cli-mcp.git
 cd sainsburys-cli-mcp
 pnpm install
 npx playwright install chromium
@@ -340,6 +340,6 @@ MIT
 <div align="center">
 
 **Built by [zish](https://github.com/abracadabra50)**
-**Built by [dangarfield](https://github.com/dangarfield)**
+**Built by [andreirpop10-svg/](https://github.com/andreirpop10-svg/)**
 
 </div>
