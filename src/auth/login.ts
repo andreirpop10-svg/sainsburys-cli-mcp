@@ -22,7 +22,7 @@ export async function login(email: string, password: string): Promise<SessionDat
   try {
     // Go to login page (OAuth endpoint)
     console.log('📍 Navigating to login page...');
-    await page.goto('https://www.sainsburys.co.uk/gol-ui/oauth/login', { waitUntil: 'domcontentloaded' });
+    await page.goto('https://account.sainsburys.co.uk/gol/login', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
     
     // Handle cookie consent if present
@@ -43,7 +43,7 @@ export async function login(email: string, password: string): Promise<SessionDat
     
     // Wait for login form to appear
     console.log('⏳ Waiting for login form...');
-    await page.waitForSelector('input[type="email"], input[name="email"], #username', { timeout: 10000 });
+    await page.waitForSelector('input[type="email"], input[name="username"], #username', { timeout: 10000 });
     
     // Fill in email
     console.log('📧 Entering email...');
@@ -71,15 +71,91 @@ export async function login(email: string, password: string): Promise<SessionDat
     // Click login button
     console.log('👆 Clicking login...');
     await page.click('button[type="submit"], button[data-testid="log-in"]');
-    
-    // Wait for navigation
-    console.log('⏳ Waiting for login...');
     await page.waitForTimeout(5000);
-    
-    // Check if logged in
+
+    // Only do banner/cookie dance when not on MFA page — MFA can be triggered here too
+    if (!page.url().includes('/mfa')) {
+      // Accept cookie banner that appears on the post-login groceries page
+      try {
+        const acceptButton = page.locator('#onetrust-accept-btn-handler');
+        if (await acceptButton.isVisible({ timeout: 3000 })) {
+          console.log('🍪 Accepting cookies on groceries page...');
+          await acceptButton.click();
+          await page.waitForTimeout(2000);
+        }
+      } catch (e) {}
+
+      // Wait for WC_AUTHENTICATION_* cookie (set by JS after cookie consent)
+      console.log('⏳ Waiting for auth cookie...');
+      for (let i = 0; i < 10; i++) {
+        const cookies = await context.cookies();
+        if (cookies.some((c: any) => c.name.startsWith('WC_AUTHENTICATION_'))) break;
+        await page.waitForTimeout(1000);
+      }
+
+      // The OAuth redirect from account.sainsburys.co.uk can land on a guest session.
+      // If "Log in / Register" is still visible, click it to start the proper OAuth flow
+      // from www.sainsburys.co.uk (/gol-ui/oauth/login), which generates a fresh challenge.
+      const loginRegisterLink = page.locator('[data-testid="login-register-link"]');
+      if (await loginRegisterLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+        console.log('⚠️ Landed as guest — clicking "Log in / Register" for proper OAuth flow...');
+        await loginRegisterLink.click();
+        await page.waitForTimeout(3000);
+
+        // Cookie banner on account.sainsburys.co.uk (fresh challenge page)
+        try {
+          const btn = page.locator('#onetrust-accept-btn-handler');
+          if (await btn.isVisible({ timeout: 3000 })) {
+            console.log('🍪 Accepting cookies on login page...');
+            await btn.click();
+            await page.waitForTimeout(2000);
+          }
+        } catch (e) {}
+
+        console.log('⏳ Waiting for login form...');
+        await page.waitForSelector('input[type="email"], input[name="username"], #username', { timeout: 10000 });
+
+        console.log('📧 Re-entering email...');
+        await page.fill('input[type="email"], input[name="email"], #username', email);
+        await page.waitForTimeout(500);
+        console.log('🔑 Re-entering password...');
+        await page.fill('input[type="password"], input[name="password"], #password', password);
+        await page.waitForTimeout(500);
+
+        await page.evaluate(`(() => {
+          document.querySelector('.onetrust-pc-dark-filter')?.remove();
+          document.querySelector('#onetrust-consent-sdk')?.remove();
+        })()`);
+        await page.waitForTimeout(500);
+
+        console.log('👆 Clicking login...');
+        await page.click('button[type="submit"], button[data-testid="log-in"]');
+        await page.waitForTimeout(5000);
+
+        // MFA may also be triggered on the second login attempt
+        if (!page.url().includes('/mfa')) {
+          try {
+            const btn = page.locator('#onetrust-accept-btn-handler');
+            if (await btn.isVisible({ timeout: 3000 })) {
+              console.log('🍪 Accepting cookies on groceries page...');
+              await btn.click();
+              await page.waitForTimeout(2000);
+            }
+          } catch (e) {}
+
+          for (let i = 0; i < 10; i++) {
+            const cookies = await context.cookies();
+            if (cookies.some((c: any) => c.name.startsWith('WC_AUTHENTICATION_'))) break;
+            await page.waitForTimeout(1000);
+          }
+        }
+      }
+    }
+
+    // Check current URL — MFA may have been triggered on either login attempt
     const currentUrl = page.url();
     console.log(`Current URL: ${currentUrl}`);
-    
+
     // Handle MFA if required
     if (currentUrl.includes('/mfa')) {
       console.log('🔐 MFA required - SMS code sent');
