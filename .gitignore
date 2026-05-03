@@ -19,6 +19,7 @@ dist/
 .idea/
 *.swp
 *.swo
+.claude/
 
 # Test
 coverage/
