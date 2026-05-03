@@ -71,14 +71,26 @@ export async function login(email: string, password: string): Promise<SessionDat
     // Click login button
     console.log('👆 Clicking login...');
     await page.click('button[type="submit"], button[data-testid="log-in"]');
-    await page.waitForTimeout(5000);
+
+    // Wait for redirect away from the login/account domain (or to MFA page)
+    // Using waitForURL is more reliable than a fixed timeout, especially in WSL/Linux
+    try {
+      await page.waitForURL(
+        (url) => !url.includes('account.sainsburys.co.uk') || url.includes('/mfa'),
+        { timeout: 30000 }
+      );
+    } catch {
+      // If waitForURL times out, fall back to a fixed delay
+      await page.waitForTimeout(5000);
+    }
 
     // Only do banner/cookie dance when not on MFA page — MFA can be triggered here too
     if (!page.url().includes('/mfa')) {
-      // Accept cookie banner that appears on the post-login groceries page
+      // Accept cookie banner that appears on the post-login groceries page.
+      // Use a longer timeout (10s) because WSL/Linux can be slower to render the page.
       try {
         const acceptButton = page.locator('#onetrust-accept-btn-handler');
-        if (await acceptButton.isVisible({ timeout: 3000 })) {
+        if (await acceptButton.isVisible({ timeout: 10000 })) {
           console.log('🍪 Accepting cookies on groceries page...');
           await acceptButton.click();
           await page.waitForTimeout(2000);
@@ -87,7 +99,7 @@ export async function login(email: string, password: string): Promise<SessionDat
 
       // Wait for WC_AUTHENTICATION_* cookie (set by JS after cookie consent)
       console.log('⏳ Waiting for auth cookie...');
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 20; i++) {
         const cookies = await context.cookies();
         if (cookies.some((c: any) => c.name.startsWith('WC_AUTHENTICATION_'))) break;
         await page.waitForTimeout(1000);
@@ -130,20 +142,28 @@ export async function login(email: string, password: string): Promise<SessionDat
 
         console.log('👆 Clicking login...');
         await page.click('button[type="submit"], button[data-testid="log-in"]');
-        await page.waitForTimeout(5000);
+
+        try {
+          await page.waitForURL(
+            (url) => !url.includes('account.sainsburys.co.uk') || url.includes('/mfa'),
+            { timeout: 30000 }
+          );
+        } catch {
+          await page.waitForTimeout(5000);
+        }
 
         // MFA may also be triggered on the second login attempt
         if (!page.url().includes('/mfa')) {
           try {
             const btn = page.locator('#onetrust-accept-btn-handler');
-            if (await btn.isVisible({ timeout: 3000 })) {
+            if (await btn.isVisible({ timeout: 10000 })) {
               console.log('🍪 Accepting cookies on groceries page...');
               await btn.click();
               await page.waitForTimeout(2000);
             }
           } catch (e) {}
 
-          for (let i = 0; i < 10; i++) {
+          for (let i = 0; i < 20; i++) {
             const cookies = await context.cookies();
             if (cookies.some((c: any) => c.name.startsWith('WC_AUTHENTICATION_'))) break;
             await page.waitForTimeout(1000);
